@@ -1,3 +1,4 @@
+
 # Real Estate KPI Dashboard - Updated Features
 
 ## Recent Improvements
@@ -184,3 +185,7 @@ Runs the standalone email scheduler for automatic daily reports
 4. Add any additional conversion metrics as needed
 
 All major requested features have been implemented with beautiful progress wheel visualizations and the application should run cleanly with proper email functionality targeting nhcazateam@gmail.com.
+=======
+# KPI-App
+Key Performance Indicator App for Realtors
+>>>>>>> 0f8a439731dcbcbb82bf69ceccd361d678e7b45b

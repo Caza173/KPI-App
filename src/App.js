@@ -46,13 +46,15 @@ const App = () => {
   const [calls, setCalls] = useState(() => safeJSONParse(localStorage.getItem('calls'), { made: 0, answered: 0 }));
   const [marketingExpenses, setMarketingExpenses] = useState(() => safeJSONParse(localStorage.getItem('marketingExpenses'), []));
   const [gciData, setGciData] = useState(() => safeJSONParse(localStorage.getItem('gciData'), { gciGoal: 215000, avgSale: 325090, avgCommission: 0.025 }));
-  const [dailyInputs, setDailyInputs] = useState(() => safeJSONParse(localStorage.getItem('dailyInputs'), {}));  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [dailyInputs, setDailyInputs] = useState(() => safeJSONParse(localStorage.getItem('dailyInputs'), {}));
+  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [activeTab, setActiveTab] = useState('properties');
   const [selectedReportPeriod, setSelectedReportPeriod] = useState('week');
   const [selectedWeek, setSelectedWeek] = useState(1);
   const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
-    const [newProperty, setNewProperty] = useState({ 
+  
+  const [newProperty, setNewProperty] = useState({ 
     address: '', client: '', type: 'Seller', price: 0, commission: 0, commissionPercent: 2.5, 
     month: 'January', timestamp: '', status: 'In Progress', leadSource: 'Social Media', 
     offerWritten: false, offerAccepted: false 
@@ -64,7 +66,8 @@ const App = () => {
     monthly: { calls: 300, hours: 160, appointments: 40, offersWritten: 100, listingAgreements: 40, buyerContracts: 60 } 
   }));
   const [closedDeals, setClosedDeals] = useState(() => safeJSONParse(localStorage.getItem('closedDeals'), []));
-  const [appName, setAppName] = useState(() => localStorage.getItem('appName') || 'Real Estate KPI Dashboard');  const [reportEmail, setReportEmail] = useState(() => localStorage.getItem('reportEmail') || '');
+  const [appName, setAppName] = useState(() => localStorage.getItem('appName') || 'Real Estate KPI Dashboard');
+  const [reportEmail, setReportEmail] = useState(() => localStorage.getItem('reportEmail') || '');
   const [reportPhone, setReportPhone] = useState(() => localStorage.getItem('reportPhone') || '');
   const [manualHourlyRate, setManualHourlyRate] = useState(() => parseFloat(localStorage.getItem('manualHourlyRate')) || 0);
   
@@ -105,7 +108,8 @@ const App = () => {
   const [selectedProperty, setSelectedProperty] = useState('');
   const [newExpense, setNewExpense] = useState({ propertyClient: '', category: 'Marketing & Advertising', amount: 0, month: 'January', timestamp: '', mileage: 0, gasPrice: 0 });
   const [newHour, setNewHour] = useState({ propertyClient: '', dayOfWeek: 'Monday', hours: 0, month: 'January', timestamp: '' });
-  const [newTransaction, setNewTransaction] = useState({ address: '', client: '', price: 0, commission: 0, commissionPercent: 2.5, status: 'Under Contract', date: new Date().toISOString().split('T')[0] });  const [contractTransactions, setContractTransactions] = useState(() => safeJSONParse(localStorage.getItem('contractTransactions'), []));
+  const [newTransaction, setNewTransaction] = useState({ address: '', client: '', price: 0, commission: 0, commissionPercent: 2.5, status: 'Under Contract', date: new Date().toISOString().split('T')[0] });
+  const [contractTransactions, setContractTransactions] = useState(() => safeJSONParse(localStorage.getItem('contractTransactions'), []));
   const [calendarEvents, setCalendarEvents] = useState(() => safeJSONParse(localStorage.getItem('calendarEvents'), {}));
   const [selectedCalendarDate, setSelectedCalendarDate] = useState(new Date().toISOString().split('T')[0]);
   
@@ -176,6 +180,85 @@ const App = () => {
     
     return { weeklyTotals, weeklyData };
   };
+
+  // Computed Values (use manual values if available, otherwise calculate) - MOVED HERE FOR DEPENDENCY ORDER
+  const totalClosedCommission = manualPerformanceMetrics.totalCommissions > 0 ? 
+    manualPerformanceMetrics.totalCommissions : 
+    closedDeals.reduce((sum, deal) => sum + (deal.commission || 0), 0);
+    
+  const totalWorkHours = manualPerformanceMetrics.totalHours > 0 ? 
+    manualPerformanceMetrics.totalHours : 
+    Object.values(dailyInputs).reduce((sum, day) => sum + (day?.hoursWorked || 0), 0);
+    
+  const calculatedHourlyRate = totalWorkHours > 0 ? totalClosedCommission / totalWorkHours : 0;
+  
+  // Experience level calculations (use manual deals if available)
+  const dealsClosed = manualPerformanceMetrics.dealsClosedYTD > 0 ? 
+    manualPerformanceMetrics.dealsClosedYTD : 
+    closedDeals.length;
+    
+  const experienceLevel = dealsClosed >= 50 ? 10 : dealsClosed >= 40 ? 9 : dealsClosed >= 30 ? 8 : 
+                         dealsClosed >= 20 ? 7 : dealsClosed >= 15 ? 6 : dealsClosed >= 5 ? 5 : 0;
+  
+  const stepLevel = dealsClosed >= 20 ? 3 : dealsClosed >= 10 ? 2 : 1;
+  
+  // Calculate bonused hourly rate
+  const baseHourlyRate = manualHourlyRate > 0 ? manualHourlyRate : calculatedHourlyRate;
+  const experienceBonus = experienceLevel > 0 ? (experienceLevelBonuses[experienceLevel] || 0) : 0;
+  const stepBonus = stepLevelBonuses[stepLevel] || 0;
+  const totalBonusPercentage = experienceBonus + stepBonus;
+  const hourlyRate = baseHourlyRate * (1 + totalBonusPercentage / 100);
+
+  // Monthly calculations (moved here to be available for useEffect)
+  const currentMonth = new Date().getMonth();
+  const monthlyData = Array.from({ length: 12 }, (_, monthIndex) => {
+    const monthName = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][monthIndex];
+    const monthlyInputs = Object.values(dailyInputs).filter(day => {
+      if (!day.date) return false;
+      const dayMonth = new Date(day.date).getMonth();
+      return dayMonth === monthIndex;
+    });
+    
+    return {
+      month: monthName,
+      name: monthName,
+      hours: monthlyInputs.reduce((sum, day) => sum + (day.hoursWorked || 0), 0),
+      calls: monthlyInputs.reduce((sum, day) => sum + (day.callsMade || 0), 0),
+      listingAppts: monthlyInputs.reduce((sum, day) => sum + (day.listingsApptsTaken || 0), 0),
+      buyerAppts: monthlyInputs.reduce((sum, day) => sum + (day.buyerAppts || 0), 0),
+      offersWritten: monthlyInputs.reduce((sum, day) => sum + (day.offersWritten || 0), 0),
+      listingAgreements: monthlyInputs.reduce((sum, day) => sum + (day.listingAgreements || 0), 0),
+      buyerContracts: monthlyInputs.reduce((sum, day) => sum + (day.buyerContracts || 0), 0),
+      // Commission from deals closed in this month (based on closing date)
+      commission: closedDeals.filter(deal => {
+        if (!deal.closingDate) return deal.month === monthName; // fallback to old method
+        const closingMonth = new Date(deal.closingDate).getMonth();
+        return closingMonth === monthIndex;
+      }).reduce((sum, deal) => sum + (deal.commission || 0), 0),
+      // Total expenses incurred during this month (all property expenses + labor)
+      totalExpenses: (() => {
+        const monthExpenses = expenses.filter(expense => {
+          if (!expense.date) return expense.month === monthName; // fallback
+          const expenseMonth = new Date(expense.date).getMonth();
+          return expenseMonth === monthIndex;
+        }).reduce((sum, e) => sum + (e.amount || 0), 0);
+        const monthLaborCost = monthlyInputs.reduce((sum, day) => sum + (day.hoursWorked || 0), 0) * hourlyRate;
+        return monthExpenses + monthLaborCost;
+      })()
+    };
+  });
+
+  // Monthly progress calculations
+  const currentMonthData = monthlyData[currentMonth];
+  const monthlyProgress = {
+    calls: goals.monthly.calls > 0 ? (currentMonthData.calls / goals.monthly.calls) * 100 : 0,
+    hours: goals.monthly.hours > 0 ? (currentMonthData.hours / goals.monthly.hours) * 100 : 0,
+    appointments: goals.monthly.appointments > 0 ? ((currentMonthData.listingAppts + currentMonthData.buyerAppts) / goals.monthly.appointments) * 100 : 0,
+    offersWritten: goals.monthly.offersWritten > 0 ? (currentMonthData.offersWritten / goals.monthly.offersWritten) * 100 : 0,
+    listingAgreements: goals.monthly.listingAgreements > 0 ? (currentMonthData.listingAgreements / goals.monthly.listingAgreements) * 100 : 0,
+    buyerContracts: goals.monthly.buyerContracts > 0 ? (currentMonthData.buyerContracts / goals.monthly.buyerContracts) * 100 : 0
+  };
+
     const chartRef = useRef(null);
   const [chartData, setChartData] = useState({
     labels: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'],
@@ -275,33 +358,7 @@ const App = () => {
       }
     };
   }, [activeTab, monthlyData, hourlyRate]);
-  // Computed Values (use manual values if available, otherwise calculate)
-  const totalClosedCommission = manualPerformanceMetrics.totalCommissions > 0 ? 
-    manualPerformanceMetrics.totalCommissions : 
-    closedDeals.reduce((sum, deal) => sum + (deal.commission || 0), 0);
-    
-  const totalWorkHours = manualPerformanceMetrics.totalHours > 0 ? 
-    manualPerformanceMetrics.totalHours : 
-    Object.values(dailyInputs).reduce((sum, day) => sum + (day?.hoursWorked || 0), 0);
-    
-  const calculatedHourlyRate = totalWorkHours > 0 ? totalClosedCommission / totalWorkHours : 0;
   
-  // Experience level calculations (use manual deals if available)
-  const dealsClosed = manualPerformanceMetrics.dealsClosedYTD > 0 ? 
-    manualPerformanceMetrics.dealsClosedYTD : 
-    closedDeals.length;
-    
-  const experienceLevel = dealsClosed >= 50 ? 10 : dealsClosed >= 40 ? 9 : dealsClosed >= 30 ? 8 : 
-                         dealsClosed >= 20 ? 7 : dealsClosed >= 15 ? 6 : dealsClosed >= 5 ? 5 : 0;
-  
-  const stepLevel = dealsClosed >= 20 ? 3 : dealsClosed >= 10 ? 2 : 1;
-    // Calculate bonused hourly rate
-  const baseHourlyRate = manualHourlyRate > 0 ? manualHourlyRate : calculatedHourlyRate;
-  const experienceBonus = experienceLevel > 0 ? (experienceLevelBonuses[experienceLevel] || 0) : 0;
-  const stepBonus = stepLevelBonuses[stepLevel] || 0;
-  const totalBonusPercentage = experienceBonus + stepBonus;
-  const hourlyRate = baseHourlyRate * (1 + totalBonusPercentage / 100);
-
   // Helper function to normalize date for consistent grouping
   const normalizeDateKey = (timestamp) => {
     if (!timestamp) return 'Unknown';
@@ -374,53 +431,6 @@ const App = () => {
   const volumeUnderContract = contractTransactions.filter(t => t.status === 'Under Contract').reduce((sum, t) => sum + (t.price || 0), 0);
   const volumePending = contractTransactions.filter(t => t.status === 'Pending').reduce((sum, t) => sum + (t.price || 0), 0);
   
-  // Monthly calculations
-  const currentMonth = new Date().getMonth();
-  const monthlyData = Array.from({ length: 12 }, (_, monthIndex) => {
-    const monthName = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][monthIndex];
-    const monthlyInputs = Object.values(dailyInputs).filter(day => {
-      if (!day.date) return false;
-      const dayMonth = new Date(day.date).getMonth();
-      return dayMonth === monthIndex;
-    });    return {
-      month: monthName,
-      name: monthName,
-      hours: monthlyInputs.reduce((sum, day) => sum + (day.hoursWorked || 0), 0),
-      calls: monthlyInputs.reduce((sum, day) => sum + (day.callsMade || 0), 0),
-      listingAppts: monthlyInputs.reduce((sum, day) => sum + (day.listingsApptsTaken || 0), 0),
-      buyerAppts: monthlyInputs.reduce((sum, day) => sum + (day.buyerAppts || 0), 0),
-      offersWritten: monthlyInputs.reduce((sum, day) => sum + (day.offersWritten || 0), 0),
-      listingAgreements: monthlyInputs.reduce((sum, day) => sum + (day.listingAgreements || 0), 0),
-      buyerContracts: monthlyInputs.reduce((sum, day) => sum + (day.buyerContracts || 0), 0),
-      // Commission from deals closed in this month (based on closing date)
-      commission: closedDeals.filter(deal => {
-        if (!deal.closingDate) return deal.month === monthName; // fallback to old method
-        const closingMonth = new Date(deal.closingDate).getMonth();
-        return closingMonth === monthIndex;
-      }).reduce((sum, deal) => sum + (deal.commission || 0), 0),
-      // Total expenses incurred during this month (all property expenses + labor)
-      totalExpenses: (() => {
-        const monthExpenses = expenses.filter(expense => {
-          if (!expense.date) return expense.month === monthName; // fallback
-          const expenseMonth = new Date(expense.date).getMonth();
-          return expenseMonth === monthIndex;
-        }).reduce((sum, e) => sum + (e.amount || 0), 0);
-        const monthLaborCost = monthlyInputs.reduce((sum, day) => sum + (day.hoursWorked || 0), 0) * hourlyRate;
-        return monthExpenses + monthLaborCost;
-      })()
-    };
-  });
-    // Monthly progress calculations
-  const currentMonthData = monthlyData[currentMonth];
-  const monthlyProgress = {
-    calls: goals.monthly.calls > 0 ? (currentMonthData.calls / goals.monthly.calls) * 100 : 0,
-    hours: goals.monthly.hours > 0 ? (currentMonthData.hours / goals.monthly.hours) * 100 : 0,
-    appointments: goals.monthly.appointments > 0 ? ((currentMonthData.listingAppts + currentMonthData.buyerAppts) / goals.monthly.appointments) * 100 : 0,
-    offersWritten: goals.monthly.offersWritten > 0 ? (currentMonthData.offersWritten / goals.monthly.offersWritten) * 100 : 0,
-    listingAgreements: goals.monthly.listingAgreements > 0 ? (currentMonthData.listingAgreements / goals.monthly.listingAgreements) * 100 : 0,
-    buyerContracts: goals.monthly.buyerContracts > 0 ? (currentMonthData.buyerContracts / goals.monthly.buyerContracts) * 100 : 0
-  };
-  
   // Weekly progress calculations
   const currentDate = new Date();
   const currentYear = currentDate.getFullYear();
@@ -459,10 +469,14 @@ const App = () => {
     offersWritten: goals.daily.offersWritten > 0 ? ((todayData.offersWritten || 0) / goals.daily.offersWritten) * 100 : 0,
     listingAgreements: goals.daily.listingAgreements > 0 ? ((todayData.listingAgreements || 0) / goals.daily.listingAgreements) * 100 : 0,
     buyerContracts: goals.daily.buyerContracts > 0 ? ((todayData.buyerContracts || 0) / goals.daily.buyerContracts) * 100 : 0
-  };  // Event handlers
+  };
+  
+  // Event handlers
   const handlePropertySubmit = (e) => {
     e.preventDefault();
-    const currentDate = new Date().toISOString().split('T')[0];    const property = {
+    const currentDate = new Date().toISOString().split('T')[0];
+    
+    const property = {
       ...newProperty,
       timestamp: new Date().toLocaleString(),
       commission: newProperty.price * (newProperty.commissionPercent / 100),
@@ -473,12 +487,16 @@ const App = () => {
         closedDate: newProperty.status === 'Closed' ? currentDate : null
       }
     };
-    setProperties([...properties, property]);    setNewProperty({ 
+    setProperties([...properties, property]);
+    
+    setNewProperty({ 
       address: '', client: '', type: 'Seller', price: 0, commission: 0, commissionPercent: 2.5, 
       month: 'January', timestamp: '', status: 'In Progress', leadSource: 'Social Media',
       offerWritten: false, offerAccepted: false 
     });
-  };const handleStatusChange = (index, newStatus) => {
+  };
+  
+  const handleStatusChange = (index, newStatus) => {
     const property = properties[index];
     const currentDate = new Date().toISOString().split('T')[0];
     
@@ -494,7 +512,9 @@ const App = () => {
     } else if (newStatus === 'Closed' && !statusDates.closedDate) {
       statusDates.closedDate = currentDate;
     }
-      if (newStatus === 'Closed') {      if (window.confirm(`Are you sure you want to close "${property.address}"? This will move it to closed deals.`)) {
+    
+    if (newStatus === 'Closed') {
+      if (window.confirm(`Are you sure you want to close "${property.address}"? This will move it to closed deals.`)) {
         // Get all hours and expenses for this property using the helper function
         const expenseData = calculateTotalExpensesWithLabor(property.address, property.client);
         
@@ -534,7 +554,8 @@ const App = () => {
           statusDates: statusDates
         };
         setProperties(updatedProperties);
-      }} else if (newStatus === 'Under Contract' || newStatus === 'Pending') {
+      }
+    } else if (newStatus === 'Under Contract' || newStatus === 'Pending') {
       // Check if transaction already exists to avoid duplicates
       const existingTransaction = contractTransactions.find(t => 
         t.address === property.address && t.client === property.client
@@ -800,7 +821,9 @@ const App = () => {
     });
     
     setContractTransactions(updatedTransactions);
-  };const getPropertyAddresses = () => {
+  };
+  
+  const getPropertyAddresses = () => {
     // Include properties from all lifecycle stages
     const allProperties = [
       ...properties, // Current properties in main list
@@ -1138,7 +1161,8 @@ const App = () => {
   }, [properties, dailyInputs, goals, closedDeals, appName, reportEmail, reportPhone, manualHourlyRate, manualPerformanceMetrics, experienceLevelBonuses, stepLevelBonuses, emailConfig, smsConfig, expenses, hours, contractTransactions, calendarEvents, gciData]);
 
   return (
-    <div className="container">      <div style={{display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '1rem'}}>
+    <div className="container">
+      <div style={{display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '1rem'}}>
         <input 
           type="text" 
           value={appName} 
@@ -1154,7 +1178,11 @@ const App = () => {
             minWidth: '300px'
           }}
         />
-      </div>{/* Tabs */}      <div className="tabs">        <div 
+      </div>
+      
+      {/* Tabs */}
+      <div className="tabs">
+        <div 
           className={`tab ${activeTab === 'properties' ? 'active' : ''}`}
           onClick={() => setActiveTab('properties')}
         >
@@ -1337,7 +1365,20 @@ const App = () => {
                     <input type="number" name="monthlyBuyerContracts" defaultValue={goals.monthly.buyerContracts} />
                   </div>
                 </div>              </div>
-              <button type="submit" style={{padding: '0.5rem 1rem', fontSize: '0.9rem', marginTop: '1rem'}}>Update Goals</button>
+              <div style={{display: 'flex', justifyContent: 'flex-start', marginTop: '1rem'}}>
+                <button type="submit" style={{
+                  padding: '0.5rem 1rem', 
+                  fontSize: '0.9rem', 
+                  backgroundColor: '#C5A95E',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '4px',
+                  cursor: 'pointer',
+                  maxWidth: '150px'
+                }}>
+                  Update Goals
+                </button>
+              </div>
             </form>
           </div>
           

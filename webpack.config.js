@@ -6,7 +6,8 @@ module.exports = {
     path: path.resolve(__dirname, 'dist'),
     filename: 'bundle.js',
     clean: true
-  },  module: {
+  },
+  module: {
     rules: [
       {
         test: /\.(js|jsx)$/,
@@ -31,7 +32,8 @@ module.exports = {
       'ansi-html-community': require.resolve('ansi-html-community'),
       kleur: require.resolve('kleur')
     }
-  },  devServer: {
+  },
+  devServer: {
     static: {
       directory: path.join(__dirname, 'public'),
     },
